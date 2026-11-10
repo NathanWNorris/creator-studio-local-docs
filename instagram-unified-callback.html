@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-x+rnm+5AtP1yXq6FVzgcGOl0ybPynSlqpHStl98rcqc='; style-src 'none'; img-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<title>Instagram sign-in</title>
+</head>
+<body>
+<p id="status">Completing the sign-in response. No account connection is confirmed on this page.</p>
+<noscript><p>JavaScript is required to finish sign-in.</p></noscript>
+<script>
+(function () {
+  'use strict';
+  var FIXED_RETURN = 'http://localhost:8947/integrations/social/instagram';
+  var MAX_SEARCH_LENGTH = 4096;
+  var statusEl = document.getElementById('status');
+
+  function reject(message) {
+    statusEl.textContent = message;
+  }
+
+  var search = location.search;
+
+  // Best-effort history cleanup. The hosting provider already received the
+  // original request; this cannot hide the code or state from that provider.
+  try {
+    history.replaceState(null, '', location.pathname);
+  } catch (e) {
+    // Successful location.replace below also replaces this history entry.
+    // Rejections may retain the query when this browser disallows cleanup.
+  }
+
+  // A meta CSP cannot enforce frame-ancestors; this is only a script guard.
+  if (window.top !== window.self) {
+    reject('This page cannot be used inside a frame.');
+    return;
+  }
+
+  if (search.length > MAX_SEARCH_LENGTH) {
+    reject('Callback rejected: query too long.');
+    return;
+  }
+
+  var params = new URLSearchParams(search);
+
+  function single(name) {
+    var all = params.getAll(name);
+    if (all.length === 0) {
+      return null;
+    }
+    if (all.length > 1) {
+      throw new Error('duplicate');
+    }
+    return all[0];
+  }
+
+  var state;
+  var code;
+  var error;
+  try {
+    state = single('state');
+    code = single('code');
+    error = single('error');
+  } catch (e) {
+    reject('Callback rejected: duplicate parameters.');
+    return;
+  }
+
+  if (state === null || !/^[A-Za-z0-9_-]{1,64}$/.test(state)) {
+    reject('Callback rejected: missing or invalid state.');
+    return;
+  }
+  if ((code === null) === (error === null)) {
+    reject('Callback rejected: expected exactly one of code or error.');
+    return;
+  }
+  if (code !== null && !/^[\x21-\x7E]{1,2048}$/.test(code)) {
+    reject('Callback rejected: invalid code.');
+    return;
+  }
+  if (error !== null && !/^[a-z_]{1,64}$/.test(error)) {
+    reject('Callback rejected: invalid error.');
+    return;
+  }
+
+  // A denied grant is handled here. The local frontend error-query contract
+  // has not been proven; do not forward an untested error-only callback.
+  if (error !== null) {
+    reject('Sign-in was not completed. Return to local Creator Studio and start again.');
+    return;
+  }
+
+  var query = 'code=' + encodeURIComponent(code) +
+    '&state=' + encodeURIComponent(state);
+
+  // replace(): the callback URL does not stay in the session history either.
+  location.replace(FIXED_RETURN + '?' + query);
+})();
+</script>
+</body>
+</html>
